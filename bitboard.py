@@ -1,0 +1,84 @@
+from numpy import zeros, array
+from random import randint
+
+ROWS = 6
+COLS = 7
+
+"""
+ +---------------------+
+ | 6 13 20 27 34 41 48 |
+ | 5 12 19 26 33 40 47 |
+ | 4 11 18 25 32 39 46 |
+ | 3 10 17 24 31 38 45 |
+ | 2  9 16 23 30 37 44 |
+ | 1  8 15 22 29 36 43 |
+ | 0  7 14 21 28 35 42 |
+ +---------------------+
+1  -> Player 1 Won
+0  -> Player 0 Won
+-1 -> Tie
+-2 -> Game hasn't ended
+"""
+class bitboard:
+  def __init__(self):
+    self.heights = array([0,  7, 14, 21, 28, 35, 42])
+    self.boards = zeros(2, dtype=int)
+    self.player = 0
+    self.winner = -2
+
+  def move(self, col):
+    pos = 1 << self.heights[col]
+    self.boards[self.player] |= pos
+    self.heights[col] += 1
+    self.player ^= 1
+
+  def legal_moves(self):
+    brd = self.boards[0] | self.boards[1]
+    moves = 0
+    size = 0
+    for i in range(5, 49, COLS):
+      # column is not full 
+      if not (1 << i) & brd:
+        #        what to move   how much to move it by
+        moves |= (i // COLS + 1) << size * COLS
+        size += 1
+    return size, moves
+
+  def get_move(self):
+    size, moves = self.legal_moves()
+    x = randint(0, size - 1)
+    return ((moves & (127 << x * COLS)) >> x * COLS)- 1
+
+  def is_terminal(self):
+    brd = self.boards[self.player ^ 1]
+    self.winner = self.player ^ 1
+    # vertical
+    if brd & (brd >> 1) & (brd >> 2) & (brd >> 3):
+      return self.player ^ 1
+    # diagonal left
+    if brd & (brd >> 6) & (brd >> 12) & (brd >> 18): 
+      return self.player ^ 1
+    # horizontal
+    if brd & (brd >> 7) & (brd >> 14) & (brd >> 21):
+      return self.player ^ 1
+    # diagonal right
+    if brd & (brd >> 8) & (brd >> 16) & (brd >> 24):
+      return self.player ^ 1
+    # draw
+    if (self.boards[0] | self.boards[1]) & 141845657554976 == 141845657554976:
+      self.winner = -1
+      return -1;
+    self.winner = -2
+    return -2
+
+  def print(self):
+    for i in range(ROWS-1, -1, -1):
+      for j in range(i, i + 49, COLS):
+        mask = 1 << j
+        if self.boards[0] & mask:
+          print("0", end=' ')
+        elif self.boards[1] & mask:
+          print("1", end=' ')
+        else:
+          print(".", end=' ')
+      print()
