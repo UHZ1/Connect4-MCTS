@@ -1,5 +1,5 @@
 from bitboard import bitboard
-from mcts import task
+from bitmcts import task
 
 def play():
   b = bitboard()
