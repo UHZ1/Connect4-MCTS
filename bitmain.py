@@ -1,5 +1,9 @@
 from bitboard import bitboard
+<<<<<<< HEAD
 from bitmcts import run
+=======
+from bitmcts import task
+>>>>>>> d68bf81af0fb2160283db88499fb7e24309a8f0a
 
 
 def bot_then_player():
