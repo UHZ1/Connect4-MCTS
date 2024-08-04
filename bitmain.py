@@ -1,7 +1,20 @@
 from bitboard import bitboard
-from mcts import task
+from bitmcts import run
 
-def play():
+
+def bot_then_player():
+  b = bitboard()
+  while b.is_terminal() == -2:
+    mv = run(b)
+    b.move(mv)
+    b.print()
+    if b.is_terminal() != -2:
+      break;
+    mv = int(input("Enter: "))
+    b.move(mv)
+    b.print()
+
+def player_then_bot():
   b = bitboard()
   while b.is_terminal() == -2:
     mv = int(input("Enter: "))
@@ -9,12 +22,11 @@ def play():
     b.print()
     if b.is_terminal() != -2:
       break;
-    print()
-    mv = task(b, 3000, 150)
+    mv = run(b)
     b.move(mv)
     b.print()
 
   print("Winner: " + str(b.winner))
   return
 
-play()
+player_then_bot()

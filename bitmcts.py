@@ -1,95 +1,118 @@
-from copy import deepcopy
-from numpy import empty, log, sqrt
-from random import randint
+from bitboard import bitboard
+from numpy import array, copy, sqrt, log, random
+from time import time, perf_counter
 
-EXPL = 0.58578643762690485
-COLS = 7
-ROWS = 6
+s2 = sqrt(2)
 
 class Node:
-  def __init__(self, rt, brd, mv=None):
-    self.root = rt
-    self.board = deepcopy(brd)
-    self.target_size, self.untried_moves = brd.legal_moves()
-    self.untried_size = self.target_size
-    self.children = empty(self.target_size, dtype=object)
-    self.children_size = 0
-    self.turn = brd.player
-    self.simulated_move = mv
-    self.state = None
-    # not root check
-    if mv != None:
-      self.board.move(mv)
-      if self.board.is_terminal() != -2:
-        # 0/1 winner, -1 tie, not possible to lose
-        self.state = 1 if self.board.winner != -1 else -1
-    self.score = 0
+  __slots__ = ('root', 'board', 'children', 'move', 'wins', 'visits', 'uct')
+
+  def __init__(self, root, board, move):
+    self.root = root
+    self.board = board
+    self.children = None   # turn to numpy
+    self.move = move
+    self.wins = 0
     self.visits = 0
-    self.uct = -float("inf")
-    # shuffle untried moves
-    for i in range(self.untried_size-1, 0, -1):
-      x = randint(0, i)
-      mask_x = self.untried_moves & (127 << x * COLS)
-      mask_i = self.untried_moves & (127 << i * COLS)
-      diff = abs(x * COLS - i * COLS)
-      g, l = max(mask_x, mask_i), min(mask_x, mask_i)
-      self.untried_moves ^= mask_x | mask_i
-      self.untried_moves |= ((g >> diff) | (l << diff))
+    self.uct = 0.0
 
-def select_best_child(node, f):
-  val = -float("inf")
-  ntr = None
-  for i in range(node.children_size):
-    if f(node.children[i]) > val:
-      ntr = node.children[i]
-      val = f(ntr)
-  assert(ntr)
-  return ntr
+def make_copy(board):
+  b = bitboard()
+  b.heights = copy(board.heights)
+  b.boards = copy(board.boards)
+  b.player = board.player
+  b.winner = board.winner
+  return b
 
-def select_with_uct(node):
-  while node.target_size and node.target_size == node.children_size:
-    node = select_best_child(node, lambda x: x.uct)
-  return node
+def make_child(root, move):
+  b = make_copy(root.board)
+  b.move(move)
+  return Node(root, b, move)
 
-def add_to_game_tree(node):
-  mv = ((node.untried_moves & (127 << (node.untried_size-1) * COLS)) >> (node.untried_size-1) * COLS) - 1
-  nn = Node(node, node.board, mv)
-  node.children[node.children_size] = nn
-  node.children_size += 1
-  node.untried_size -= 1
-  return nn
+def calc_uct(leaf):
+  return leaf.wins/leaf.visits + s2 * my_log(sqrt(leaf.root.visits)/leaf.visits)
 
-def simulate_game(node, iter):
-  res = 0
-  cp = deepcopy(node.board)
-  for _ in range(iter):
-    while cp.is_terminal() == -2:
-      mv = cp.get_move()
-      cp.move(mv)
-    res += 1 if cp.winner == node.turn else (0 if cp.winner == -1 else -1)
-  return res
+def my_log(x):
+  if x == 0:
+    return float('inf')
+  return log(x)
 
-def update_path(node, res):
-  while node:
-    node.visits += 1
-    node.score += res
-    res *= -1
-    if node.root:
-      node.uct = node.score / node.visits + 0.58578643762690485 * sqrt(log(node.root.visits) / node.visits)
-    node = node.root
+def run(board):
 
-def task(state, iter, simIter):
-  root = Node(None, state, None)
-  root.visits = 1
-  for _ in range(iter):
-    node = select_with_uct(root)
-    if node.state != None:
-      update_path(node, node.state * 1000)
-    else:
-      node = add_to_game_tree(node)
-      res = simulate_game(node, simIter)
-      update_path(node, res)
-  return select_best_child(root, lambda x: x.visits).simulated_move
+  root = Node(None, board, None)
+  root.visits += 1
 
-def run(state, iter, simIter):
-  pass
+  selection_time = 0
+  expansion_time = 0
+  simulation_time = 0
+  backprop_time = 0
+
+  iter = 0
+  sstart = time()
+
+  while True:
+
+    if time() - sstart >= 3:
+      print(f"Iterations in 3 seconds: {iter}")
+      print(f"Selection time: {selection_time:.6f} Expansion time: {expansion_time:.6f}")
+      print(f"Simulation time: {simulation_time:.6f} Backprop time: {backprop_time:.6f}")
+      break
+    iter += 1
+
+    # selection
+    start = perf_counter()
+    node = root
+    while node.children:
+      if None in {x.uct:0 for x in node.children} or iter % 68 == 0:
+        node = random.choice(node.children)
+      else:
+        node = max(node.children, key=lambda x: x.uct)
+    end = perf_counter()
+    selection_time += (end - start)
+
+    # expansion
+    start = perf_counter()
+    leaf = node
+    if node.board.is_terminal() == -2:
+      node.children = []
+      for move in node.board.gen_legal_moves():
+        node.children.append(make_child(node, move))
+        if node.children[-1].board.is_terminal() >= 0:
+          leaf = node.children[-1]
+          leaf.wins += float('inf')
+        elif node.children[-1].board.swap_is_terminal(move) >= 0:
+          leaf = node.children[-1]
+          leaf.wins += float('inf')
+        else:
+          leaf = random.choice(node.children)
+
+    end = perf_counter()
+    expansion_time += (end - start)
+
+    # simulation
+    start = perf_counter()
+    score = 0
+    for _ in range(25):
+      b = make_copy(leaf.board)
+      while b.is_terminal() == -2:
+        b.move(b.get_move())
+      if b.winner == (leaf.board.player ^ 1):
+        score += 1
+      elif b.winner == -1:
+        score += 0
+      else:
+        score -= 1
+    end = perf_counter()
+    simulation_time += (end - start)
+
+    start = perf_counter()
+    while leaf.root:
+      leaf.wins += score
+      score *= -1
+      leaf.visits += 1
+      leaf.uct = calc_uct(leaf)
+      leaf = leaf.root
+    end = perf_counter()
+    backprop_time += (end - start)
+
+  return max(root.children, key=lambda x: x.visits).move
